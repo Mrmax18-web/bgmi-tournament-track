@@ -1085,6 +1085,52 @@ with tab_analytics:
                         "WWCDs",
                     ]
                 ]
+
+                     # ── ADMIN SECURE LOGIN ────────────────────────────────────────────────────────
+st.sidebar.divider()
+st.sidebar.markdown("### 🔒 Organizer Access")
+# The password input box in the sidebar
+admin_pin = st.sidebar.text_input("Enter Admin PIN", type="password")
+
+# --- SET YOUR PASSWORD HERE ---
+SECRET_PIN = "626818" 
+
+if admin_pin == SECRET_PIN:
+    # 🟢 ADMIN MODE: Show all 4 tabs and allow editing
+    st.sidebar.success("Admin mode unlocked! You can now edit data.")
+    
+    tab_reg, tab_match, tab_lb, tab_anal = st.tabs([
+        "📝 Registration",
+        "🎯 Match Results",
+        "🏅 Leaderboard",
+        "📊 Analytics",
+    ])
+
+    with tab_reg:
+        section_registration(tournament_id)
+    with tab_match:
+        section_match_results(tournament_id, cfg["maps"])
+    with tab_lb:
+        section_leaderboard(tournament_id, cfg["maps"])
+    with tab_anal:
+        section_analytics(tournament_id, cfg["maps"])
+
+else:
+    # 🔴 VIEWER MODE: Show only Leaderboard and Analytics
+    if admin_pin:
+        st.sidebar.error("Incorrect PIN.")
+    else:
+        st.sidebar.info("Enter PIN to manage teams and matches.")
+        
+    tab_lb, tab_anal = st.tabs([
+        "🏅 Live Leaderboard",
+        "📊 Analytics",
+    ])
+
+    with tab_lb:
+        section_leaderboard(tournament_id, cfg["maps"])
+    with tab_anal:
+        section_analytics(tournament_id, cfg["maps"])
                 .sort_values("Grand Total", ascending=False)
                 .reset_index(drop=True)
             )
