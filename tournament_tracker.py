@@ -330,7 +330,6 @@ def apply_match_edits(
     work = teams_df.copy().reset_index(drop=True)
     edited_match = edited_match.copy().reset_index(drop=True)
 
-    # Match rows by Team name (case-insensitive, stripped).
     work["_key"] = work["Team"].astype(str).str.strip().str.lower()
     edited_match["_key"] = edited_match["Team"].astype(str).str.strip().str.lower()
 
@@ -344,7 +343,6 @@ def apply_match_edits(
             work.at[idx, rank_col] = safe_int(lookup.at[key, rank_col], 0)
             work.at[idx, kills_col] = safe_int(lookup.at[key, kills_col], 0)
 
-    # Append any brand-new teams created inside the match editor.
     existing_keys = set(work["_key"].tolist())
     new_rows: List[Dict[str, Any]] = []
     for _, row in edited_match.iterrows():
@@ -395,7 +393,6 @@ def _canonical_column_name(raw: str) -> Optional[str]:
 
 
 def read_uploaded_csv(file: Any) -> Optional[pd.DataFrame]:
-    """Parse an uploaded CSV into the canonical schema, or None on failure."""
     try:
         raw = pd.read_csv(file)
     except Exception as exc:
@@ -642,6 +639,10 @@ with st.sidebar:
             st.success("All data cleared.")
             st.rerun()
 
+    st.divider()
+    st.markdown("### 🔒 Organizer Access")
+    admin_pin = st.text_input("Enter Admin PIN", type="password")
+
 
 # --------------------------------------------------------------------------- #
 #  HEADER + KPI STRIP
@@ -671,181 +672,89 @@ st.divider()
 
 
 # --------------------------------------------------------------------------- #
-#  TABS
+#  TABS & AUTH LOGIC
 # --------------------------------------------------------------------------- #
 
-tab_entry, tab_leaderboard, tab_analytics = st.tabs(
-    ["📝  Data Entry", "🏅  Live Leaderboard", "📊  Analytics"]
-)
+SECRET_PIN = "626818"
+is_admin = (admin_pin == SECRET_PIN)
+
+if is_admin:
+    st.sidebar.success("Admin mode unlocked!")
+    tab_entry, tab_leaderboard, tab_analytics = st.tabs(
+        ["📝  Data Entry", "🏅  Live Leaderboard", "📊  Analytics"]
+    )
+else:
+    if admin_pin:
+        st.sidebar.error("Incorrect PIN.")
+    tab_leaderboard, tab_analytics = st.tabs(
+        ["🏅  Live Leaderboard", "📊  Analytics"]
+    )
 
 
 # =========================================================================== #
-#  TAB 1 - DATA ENTRY  (per-match)
+#  TAB 1 - DATA ENTRY (Admin Only)
 # =========================================================================== #
 
-with tab_entry:
-    st.subheader("1) Teams")
-    st.caption("Add team names first, then enter each match's results below.")
+if is_admin:
+    with tab_entry:
+        st.subheader("1) Teams")
+        st.caption("Add team names first, then enter each match's results below.")
 
-    with st.form("add_team_form", clear_on_submit=True):
-        name_col, button_col = st.columns([3, 1])
-        with name_col:
-            team_name = st.text_input(
-                "Team Name",
-                placeholder="e.g. Team Soul",
-                max_chars=40,
-                help="Must be unique across the tournament.",
-                label_visibility="collapsed",
-            )
-        with button_col:
-            st.write("")
-            submitted = st.form_submit_button(
-                "➕ Add Team",
-                type="primary",
-                use_container_width=True,
-            )
+        with st.form("add_team_form", clear_on_submit=True):
+            name_col, button_col = st.columns([3, 1])
+            with name_col:
+                team_name = st.text_input(
+                    "Team Name",
+                    placeholder="e.g. Team Soul",
+                    max_chars=40,
+                    help="Must be unique across the tournament.",
+                    label_visibility="collapsed",
+                )
+            with button_col:
+                st.write("")
+                submitted = st.form_submit_button(
+                    "➕ Add Team",
+                    type="primary",
+                    use_container_width=True,
+                )
 
-    if submitted:
-        existing = st.session_state.teams_df["Team"].astype(str).tolist()
-        problems = validate_team_name(team_name, existing)
-        if problems:
-            for problem in problems:
-                st.error(problem)
-        else:
-            new_row = {
-                "Team": team_name.strip(),
-                "M1 Rank": 0,
-                "M1 Kills": 0,
-                "M2 Rank": 0,
-                "M2 Kills": 0,
-                "M3 Rank": 0,
-                "M3 Kills": 0,
-            }
-            updated = pd.concat(
-                [st.session_state.teams_df, pd.DataFrame([new_row])],
-                ignore_index=True,
-            )
-            load_teams(updated)
-            st.success(f"✅ **{team_name.strip()}** added.")
-            st.rerun()
+        if submitted:
+            existing = st.session_state.teams_df["Team"].astype(str).tolist()
+            problems = validate_team_name(team_name, existing)
+            if problems:
+                for problem in problems:
+                    st.error(problem)
+            else:
+                new_row = {
+                    "Team": team_name.strip(),
+                    "M1 Rank": 0,
+                    "M1 Kills": 0,
+                    "M2 Rank": 0,
+                    "M2 Kills": 0,
+                    "M3 Rank": 0,
+                    "M3 Kills": 0,
+                }
+                updated = pd.concat(
+                    [st.session_state.teams_df, pd.DataFrame([new_row])],
+                    ignore_index=True,
+                )
+                load_teams(updated)
+                st.success(f"✅ **{team_name.strip()}** added.")
+                st.rerun()
 
-    header_left, header_right = st.columns([3, 2])
-    with header_left:
-        st.caption("Manage the master team list below.")
-    with header_right:
-        if st.button("🎲 Load demo data", use_container_width=True):
-            load_teams(pd.DataFrame(DEMO_TEAMS))
-            st.success("Demo tournament loaded.")
-            st.rerun()
+        header_left, header_right = st.columns([3, 2])
+        with header_left:
+            st.caption("Manage the master team list below.")
+        with header_right:
+            if st.button("🎲 Load demo data", use_container_width=True):
+                load_teams(pd.DataFrame(DEMO_TEAMS))
+                st.success("Demo tournament loaded.")
+                st.rerun()
 
-    # Master team roster (names only, editable)
-    roster = st.session_state.teams_df[["Team"]].copy()
-    edited_roster = render_editor(
-        roster,
-        key=f"roster_editor_{st.session_state.editor_version}",
-        num_rows="dynamic",
-        hide_index=True,
-        column_config={
-            "Team": st.column_config.TextColumn(
-                "Team",
-                required=True,
-                max_chars=40,
-                width="large",
-            ),
-        },
-    )
-
-    # Merge roster changes back while preserving per-match data
-    new_roster = normalize_dataframe(
-        pd.concat(
-            [
-                edited_roster,
-                st.session_state.teams_df.drop(columns=["Team"]),
-            ],
-            axis=1,
-        )
-    ) if not edited_roster.empty else empty_teams_df()
-
-    # If rows were removed, drop them from the master
-    kept_names = set(
-        edited_roster["Team"].astype(str).str.strip().str.lower().tolist()
-    )
-    if kept_names:
-        filtered = st.session_state.teams_df[
-            st.session_state.teams_df["Team"].astype(str).str.strip().str.lower().isin(kept_names)
-        ].reset_index(drop=True)
-    else:
-        filtered = empty_teams_df()
-
-    # Preserve any brand-new team names added via the roster editor
-    existing_keys = set(
-        filtered["Team"].astype(str).str.strip().str.lower().tolist()
-    )
-    new_rows: List[Dict[str, Any]] = []
-    for _, row in edited_roster.iterrows():
-        name = str(row.get("Team", "")).strip()
-        key = name.lower()
-        if not name or key in existing_keys:
-            continue
-        new_rows.append(
-            {
-                "Team": name,
-                "M1 Rank": 0,
-                "M1 Kills": 0,
-                "M2 Rank": 0,
-                "M2 Kills": 0,
-                "M3 Rank": 0,
-                "M3 Kills": 0,
-            }
-        )
-        existing_keys.add(key)
-
-    if new_rows:
-        filtered = pd.concat([filtered, pd.DataFrame(new_rows)], ignore_index=True)
-
-    st.session_state.teams_df = normalize_dataframe(filtered)
-    teams_df = st.session_state.teams_df
-
-    duplicates = (
-        teams_df.loc[teams_df["Team"] != "", "Team"]
-        .str.lower()
-        .value_counts()
-        .loc[lambda s: s > 1]
-    )
-    if not duplicates.empty:
-        duplicate_list = ", ".join(f"**{name}**" for name in duplicates.index)
-        st.warning(f"⚠️ Duplicate team names: {duplicate_list}. Please resolve them.")
-
-    st.divider()
-
-    # ------------------------------------------------------------------ #
-    #  Match-specific entry
-    # ------------------------------------------------------------------ #
-    st.subheader("2) Match Results")
-    st.caption(
-        "Pick a match, then enter **Rank** and **Kills** for every team. "
-        "Use **0** in a rank field to mark a match the team did not play."
-    )
-
-    selected_match = st.radio(
-        "Select match to enter / edit",
-        options=[prefix for prefix, _ in MATCHES],
-        format_func=lambda p: MATCH_LABELS[p],
-        horizontal=True,
-        key="selected_match_radio",
-    )
-
-    rank_col = f"{selected_match} Rank"
-    kills_col = f"{selected_match} Kills"
-
-    if teams_df.empty:
-        st.info("📭 Add teams above first, then come back to enter match results.")
-    else:
-        match_view = teams_df[["Team", rank_col, kills_col]].copy()
-
-        edited_match = render_editor(
-            match_view,
-            key=f"match_editor_{selected_match}_{st.session_state.editor_version}",
+        roster = st.session_state.teams_df[["Team"]].copy()
+        edited_roster = render_editor(
+            roster,
+            key=f"roster_editor_{st.session_state.editor_version}",
             num_rows="dynamic",
             hide_index=True,
             column_config={
@@ -855,35 +764,122 @@ with tab_entry:
                     max_chars=40,
                     width="large",
                 ),
-                rank_col: st.column_config.NumberColumn(
-                    f"{MATCH_LABELS[selected_match]} — Rank",
-                    min_value=DNP_RANK,
-                    max_value=MAX_RANK,
-                    step=1,
-                    help="0 = did not play",
-                    width="small",
-                ),
-                kills_col: st.column_config.NumberColumn(
-                    f"{MATCH_LABELS[selected_match]} — Kills",
-                    min_value=0,
-                    max_value=100,
-                    step=1,
-                    width="small",
-                ),
             },
         )
 
-        merged = apply_match_edits(teams_df, selected_match, edited_match)
-        st.session_state.teams_df = normalize_dataframe(merged)
+        kept_names = set(
+            edited_roster["Team"].astype(str).str.strip().str.lower().tolist()
+        )
+        if kept_names:
+            filtered = st.session_state.teams_df[
+                st.session_state.teams_df["Team"].astype(str).str.strip().str.lower().isin(kept_names)
+            ].reset_index(drop=True)
+        else:
+            filtered = empty_teams_df()
+
+        existing_keys = set(
+            filtered["Team"].astype(str).str.strip().str.lower().tolist()
+        )
+        new_rows: List[Dict[str, Any]] = []
+        for _, row in edited_roster.iterrows():
+            name = str(row.get("Team", "")).strip()
+            key = name.lower()
+            if not name or key in existing_keys:
+                continue
+            new_rows.append(
+                {
+                    "Team": name,
+                    "M1 Rank": 0,
+                    "M1 Kills": 0,
+                    "M2 Rank": 0,
+                    "M2 Kills": 0,
+                    "M3 Rank": 0,
+                    "M3 Kills": 0,
+                }
+            )
+            existing_keys.add(key)
+
+        if new_rows:
+            filtered = pd.concat([filtered, pd.DataFrame(new_rows)], ignore_index=True)
+
+        st.session_state.teams_df = normalize_dataframe(filtered)
         teams_df = st.session_state.teams_df
 
-        entered = int(
-            (teams_df[rank_col] > 0).sum()
+        duplicates = (
+            teams_df.loc[teams_df["Team"] != "", "Team"]
+            .str.lower()
+            .value_counts()
+            .loc[lambda s: s > 1]
         )
+        if not duplicates.empty:
+            duplicate_list = ", ".join(f"**{name}**" for name in duplicates.index)
+            st.warning(f"⚠️ Duplicate team names: {duplicate_list}. Please resolve them.")
+
+        st.divider()
+
+        st.subheader("2) Match Results")
         st.caption(
-            f"✅ **{entered}** team(s) have a placement recorded for "
-            f"**{MATCH_LABELS[selected_match]}**."
+            "Pick a match, then enter **Rank** and **Kills** for every team. "
+            "Use **0** in a rank field to mark a match the team did not play."
         )
+
+        selected_match = st.radio(
+            "Select match to enter / edit",
+            options=[prefix for prefix, _ in MATCHES],
+            format_func=lambda p: MATCH_LABELS[p],
+            horizontal=True,
+            key="selected_match_radio",
+        )
+
+        rank_col = f"{selected_match} Rank"
+        kills_col = f"{selected_match} Kills"
+
+        if teams_df.empty:
+            st.info("📭 Add teams above first, then come back to enter match results.")
+        else:
+            match_view = teams_df[["Team", rank_col, kills_col]].copy()
+
+            edited_match = render_editor(
+                match_view,
+                key=f"match_editor_{selected_match}_{st.session_state.editor_version}",
+                num_rows="dynamic",
+                hide_index=True,
+                column_config={
+                    "Team": st.column_config.TextColumn(
+                        "Team",
+                        required=True,
+                        max_chars=40,
+                        width="large",
+                    ),
+                    rank_col: st.column_config.NumberColumn(
+                        f"{MATCH_LABELS[selected_match]} — Rank",
+                        min_value=DNP_RANK,
+                        max_value=MAX_RANK,
+                        step=1,
+                        help="0 = did not play",
+                        width="small",
+                    ),
+                    kills_col: st.column_config.NumberColumn(
+                        f"{MATCH_LABELS[selected_match]} — Kills",
+                        min_value=0,
+                        max_value=100,
+                        step=1,
+                        width="small",
+                    ),
+                },
+            )
+
+            merged = apply_match_edits(teams_df, selected_match, edited_match)
+            st.session_state.teams_df = normalize_dataframe(merged)
+            teams_df = st.session_state.teams_df
+
+            entered = int(
+                (teams_df[rank_col] > 0).sum()
+            )
+            st.caption(
+                f"✅ **{entered}** team(s) have a placement recorded for "
+                f"**{MATCH_LABELS[selected_match]}**."
+            )
 
 
 # =========================================================================== #
@@ -893,8 +889,7 @@ with tab_entry:
 with tab_leaderboard:
     if leaderboard.empty:
         st.info(
-            "📭 No teams yet. Add teams in the **Data Entry** tab "
-            "to see the leaderboard."
+            "📭 No teams yet. " + ("Add teams in the **Data Entry** tab" if is_admin else "Waiting for organizers to add teams.")
         )
     else:
         st.subheader("Podium")
@@ -933,7 +928,7 @@ with tab_leaderboard:
 
 with tab_analytics:
     if leaderboard.empty:
-        st.info("📭 No data to analyse yet. Add teams in the **Data Entry** tab.")
+        st.info("📭 No data to analyse yet.")
     else:
         st.subheader("Tournament Analytics")
 
@@ -1074,63 +1069,16 @@ with tab_analytics:
             summary["Best Match Pts"] = summary[
                 ["M1 Pts", "M2 Pts", "M3 Pts"]
             ].max(axis=1)
-            render_dataframe(
-                summary[
-                    [
-                        "Team",
-                        "Grand Total",
-                        "Avg Pts / Match",
-                        "Kills / Match",
-                        "Best Match Pts",
-                        "WWCDs",
-                    ]
+            
+            perf_table = summary[
+                [
+                    "Team",
+                    "Grand Total",
+                    "Avg Pts / Match",
+                    "Kills / Match",
+                    "Best Match Pts",
+                    "WWCDs",
                 ]
-
-                     # ── ADMIN SECURE LOGIN ────────────────────────────────────────────────────────
-st.sidebar.divider()
-st.sidebar.markdown("### 🔒 Organizer Access")
-# The password input box in the sidebar
-admin_pin = st.sidebar.text_input("Enter Admin PIN", type="password")
-
-# --- SET YOUR PASSWORD HERE ---
-SECRET_PIN = "626818" 
-
-if admin_pin == SECRET_PIN:
-    # 🟢 ADMIN MODE: Show all 4 tabs and allow editing
-    st.sidebar.success("Admin mode unlocked! You can now edit data.")
-    
-    tab_reg, tab_match, tab_lb, tab_anal = st.tabs([
-        "📝 Registration",
-        "🎯 Match Results",
-        "🏅 Leaderboard",
-        "📊 Analytics",
-    ])
-
-    with tab_reg:
-        section_registration(tournament_id)
-    with tab_match:
-        section_match_results(tournament_id, cfg["maps"])
-    with tab_lb:
-        section_leaderboard(tournament_id, cfg["maps"])
-    with tab_anal:
-        section_analytics(tournament_id, cfg["maps"])
-
-else:
-    # 🔴 VIEWER MODE: Show only Leaderboard and Analytics
-    if admin_pin:
-        st.sidebar.error("Incorrect PIN.")
-    else:
-        st.sidebar.info("Enter PIN to manage teams and matches.")
-        
-    tab_lb, tab_anal = st.tabs([
-        "🏅 Live Leaderboard",
-        "📊 Analytics",
-    ])
-
-    with tab_lb:
-        section_leaderboard(tournament_id, cfg["maps"])
-    with tab_anal:
-        section_analytics(tournament_id, cfg["maps"])
-                .sort_values("Grand Total", ascending=False)
-                .reset_index(drop=True)
-            )
+            ].sort_values("Grand Total", ascending=False).reset_index(drop=True)
+            
+            render_dataframe(perf_table)
